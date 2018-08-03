@@ -13,7 +13,7 @@ setup(
     name='iquery',
     version=__version__,
     description='Various information query via command line.',
-    long_description=read('README.rst') + '\n\n' + read('HISTORY.rst'),
+    long_description=read('README.md') + '\n\n' + read('HISTORY.rst'),
     author='protream',
     author_email='protream@gmail.com',
     url='https://github.com/protream/iquery',

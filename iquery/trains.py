@@ -24,7 +24,8 @@ from .utils import colored, requests_get, exit_after_echo
 
 __all__ = ['query']
 
-QUERY_URL = 'https://kyfw.12306.cn/otn/lcxxcx/query'
+# QUERY_URL = 'https://kyfw.12306.cn/otn/lcxxcx/query'
+QUERY_URL = 'https://kyfw.12306.cn/otn/leftTicket/query'
 # ERR
 FROM_STATION_NOT_FOUND = 'From station not found.'
 TO_STATION_NOT_FOUND = 'To station not found.'
@@ -37,10 +38,11 @@ class TrainsCollection(object):
 
     """A set of raw datas from a query."""
 
-    headers = '车次 车站 时间 历时 商务 一等 二等 软卧 硬卧 软座 硬座 无座'.split()
+    headers = '车次 车站 时间 历时 商务 一等 二等 高软 软卧 动卧 硬卧 软座 硬座 无座 其他'.split()
 
-    def __init__(self, rows, opts):
+    def __init__(self, rows, cities, opts):
         self._rows = rows
+        self._cities = cities
         self._opts = opts
 
     def __repr__(self):
@@ -59,44 +61,77 @@ class TrainsCollection(object):
             return duration[1:]
         return duration
 
+    def _get_arrive_date(self, start_time, lishi):
+        ary1 = start_time.split(':')
+        ary2 = lishi.split(':')
+        hours = int(ary1[0]) + int(ary2[0])
+        mins = int(ary1[1]) + int(ary2[1])
+        if mins >= 60:
+            hours = hours + 1
+        if hours >= 24 and hours < 48:
+            return '次日'
+        elif hours >= 48 and hours < 72:
+            return '两日'
+        elif hours >= 72:
+            return '三日'
+        else:
+            return '当日'
+
     @property
     def trains(self):
         """Filter rows according to `headers`"""
         for row in self._rows:
-            train_no = row.get('station_train_code')
+            data_list = row.split("|")
+            # data_list[0] = ''
+            # tmp = []
+            # for index in range(len(data_list)):
+            #     tmp.append(('{}-' + data_list[index]).format(index))
+            # print(tmp)
+            train_no = data_list[3]
             initial = train_no[0].lower()
+            start = '[始]' if(data_list[4] == data_list[6]) else '[过]'
+            end = '[终]' if(data_list[5] == data_list[7]) else '[过]'
             if not self._opts or initial in self._opts:
                 train = [
                     # Column: '车次'
                     train_no,
                     # Column: '车站'
                     '\n'.join([
-                        colored.green(row.get('from_station_name')),
-                        colored.red(row.get('to_station_name')),
+                        colored.green(start + self._cities[data_list[6]]),
+                        colored.red(end + self._cities[data_list[7]])
                     ]),
                     # Column: '时间'
                     '\n'.join([
-                        colored.green(row.get('start_time')),
-                        colored.red(row.get('arrive_time')),
-                    ]),
+                        colored.green(data_list[8]),
+                        colored.red(data_list[9])
+                    ]) if(data_list[1] != '列车停运') else colored.red('停运'),
                     # Column: '历时'
-                    self._get_duration(row),
+                    '\n'.join([
+                        data_list[10],
+                        self._get_arrive_date(data_list[8], data_list[10]) + '到达'
+                    ]) if(data_list[1] != '列车停运') else '--',
                     # Column: '商务'
-                    row.get('swz_num'),
+                    data_list[32] or data_list[25] or '--',
                     # Column: '一等'
-                    row.get('zy_num'),
+                    data_list[31] or '--',
                     # Column: '二等'
-                    row.get('ze_num'),
+                    data_list[30] or '--',
+                    # Column: '高软'
+                    data_list[21] or '--',
                     # Column: '软卧'
-                    row.get('rw_num'),
+                    data_list[23] or '--',
+                    # Column: '动卧'
+                    data_list[33] or '--',
                     # Column: '硬卧'
-                    row.get('yw_num'),
+                    data_list[28] or '--',
                     # Column: '软座'
-                    row.get('rz_num'),
+                    data_list[24] or '--',
                     # Column: '硬座'
-                    row.get('yz_num'),
+                    data_list[29] or '--',
                     # Column: '无座'
-                    row.get('wz_num')
+                    data_list[26] or '--',
+                    # Column: '其他'
+                    data_list[22] or '--'
                 ]
                 yield train
 
@@ -223,25 +258,30 @@ class TrainTicketsQuery(object):
         """
         d = OrderedDict()
         d['purpose_codes'] = 'ADULT'
-        d['queryDate'] = self._valid_date
-        d['from_station'] = self._from_station_telecode
-        d['to_station'] = self._to_station_telecode
+        d['leftTicketDTO.queryDate'] = self._valid_date
+        d['leftTicketDTO.from_station'] = self._from_station_telecode
+        d['leftTicketDTO.to_station'] = self._to_station_telecode
         return d
 
     def query(self):
 
         params = self._build_params()
+        url_params = ('?leftTicketDTO.train_date={}&'
+                      'leftTicketDTO.from_station={}&'
+                      'leftTicketDTO.to_station={}&'
+                      'purpose_codes=ADULT').format(self._valid_date, self._from_station_telecode, self._to_station_telecode)
 
-        r = requests_get(QUERY_URL, params=params, verify=False)
-
+        r = requests_get(QUERY_URL + url_params, verify=False)
+        # print(r.url)
         try:
-            rows = r.json()['data']['datas']
+            rows = r.json()['data']['result']
+            cities = r.json()['data']['map']
         except KeyError:
             rows = []
         except TypeError:
             exit_after_echo(NO_RESPONSE)
 
-        return TrainsCollection(rows, self.opts)
+        return TrainsCollection(rows, cities, self.opts)
 
 
 def query(params):

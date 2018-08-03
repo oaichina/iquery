@@ -26,7 +26,7 @@ class SongPage(object):
     """The query song's page on xiami. """
 
     def __init__(self, song_url):
-        self.url = song_url
+        self.url = 'http:' + song_url
         self.html_content = requests_get(self.url).text
 
         #: pyquery object
@@ -64,7 +64,8 @@ def query(song_name):
 
     try:
         # Get the first result.
-        song_url = re.search(r'(http://www.xiami.com/song/\d+)', r.text).group(0)
+        song_url = re.search(r'(//www.xiami.com/song/\w+)', r.text).group(0)
+        print(song_url)
     except AttributeError:
         exit_after_echo(SONG_NOT_FOUND)
 
